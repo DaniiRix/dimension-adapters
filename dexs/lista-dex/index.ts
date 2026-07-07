@@ -28,6 +28,7 @@ interface PoolInfo {
 interface SwapEventArgs {
     soldId: bigint;
     tokensSold: bigint;
+    tokensBought: bigint;
     swapFee: bigint;
     adminFee: bigint;
     token0: string;
@@ -95,20 +96,25 @@ const fetch = async (options: FetchOptions): Promise<FetchResultV2> => {
         const logs = logsByTarget[idx] || [];
         logs.forEach((log: any) => {
             allSwapEvents.push({
-              soldId: log.args.sold_id,
-              tokensSold: log.args.tokens_sold,
-              swapFee: log.args.swap_fee,
-              adminFee: log.args.admin_fee,
-              token0: pool.token0,
-              token1: pool.token1,
+                soldId: log.args.sold_id,
+                tokensSold: log.args.tokens_sold,
+                tokensBought: log.args.tokens_bought,
+                swapFee: log.args.swap_fee,
+                adminFee: log.args.admin_fee,
+                token0: pool.token0,
+                token1: pool.token1,
             });
         });
     });
 
-    allSwapEvents.forEach(({ soldId, tokensSold, swapFee, adminFee, token0, token1 }) => {
+    allSwapEvents.forEach(({ soldId, tokensSold, tokensBought, swapFee, adminFee, token0, token1 }) => {
         const tokenSold = soldId === 0n ? token0 : token1;
         const tokenBought = soldId === 0n ? token1 : token0;
         if (!tokenSold || !tokenBought) return;
+        // Drop corrupt logs: swap_fee and tokens_bought are both in the bought token,
+        // and the fee is only a fraction of the output, so a valid swap can never have
+        // swap_fee > tokens_bought. Guards against occasional garbage RPC log decodes.
+        if (swapFee > tokensBought) return;
         dailyVolume.add(tokenSold, tokensSold);
         dailyFees.add(tokenBought, swapFee, METRIC.SWAP_FEES);
         dailyRevenue.add(tokenBought, adminFee, METRIC.SWAP_FEES);
