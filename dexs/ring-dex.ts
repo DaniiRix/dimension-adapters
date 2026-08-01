@@ -6,20 +6,16 @@ import { isCoreAsset } from '../helpers/prices';
 interface IRingDexConfig {
   factory: string;
   start: string;
-  washingTokens?: string[];
 }
 
 const RingDexConfigs: Record<string, IRingDexConfig> = {
   [CHAIN.ETHEREUM]: {
     factory: '0xeb2A625B704d73e82946D8d026E1F588Eed06416',
-    start: '2024-07-07',
-    washingTokens: [
-      '0xF7FAF71a5435D2DDa60FBFdB4F67B3F1a89A49b1' //fwWETH
-    ]
+    start: '2024-07-04',
   },
   [CHAIN.BLAST]: {
     factory: '0x24F5Ac9A706De0cF795A8193F6AB3966B14ECfE6',
-    start: '2024-03-01',
+    start: '2024-02-28',
   },
   [CHAIN.BSC]: {
     factory: '0x4De602A30Ad7fEf8223dcf67A9fB704324C4dd9B',
@@ -27,13 +23,15 @@ const RingDexConfigs: Record<string, IRingDexConfig> = {
   },
   [CHAIN.HYPERLIQUID]: {
     factory: '0x4AfC2e4cA0844ad153B090dc32e207c1DD74a8E4',
-    start: '2025-07-18',
+    start: '2025-07-24',
   },
 }
 
 const methodology = {
+  Volume: 'Value of tokens swapped on Ring pairs, counted once per trade. Each trade is valued on the less liquid side of the pair, so pairs holding fake or worthless tokens do not inflate the total.',
   Fees: 'User pays 0.3% fees on each swap.',
-  Revenue: 'Protocol has no revenue.',
+  UserFees: 'User pays 0.3% fees on each swap.',
+  Revenue: 'Zero. Ring takes no share of swap fees — the protocol fee switch exists but is currently turned off.',
   SupplySideRevenue: 'All fees are distributed to LPs.',
 }
 
@@ -88,7 +86,8 @@ const fetch = async (options: FetchOptions) => {
   for (const log of swapLogs) {
     const tokens = pairs[formatAddress(log.address)];
     if (tokens) {
-      // so many scam token pairs in ringdex, so adding non core assets to dailyVolume
+      // Prices the non-core side on purpose (inverted vs addOneToken): scam pairs hold fake
+      // core-asset legs, so pricing the core side inflated volume ~710x on 2026-06-17 (#7758).
       if (isCoreAsset(options.chain, tokens[0])) {
         dailyVolume.add(tokens[1], Math.abs(Number(log.args.amount1In)))
         dailyVolume.add(tokens[1], Math.abs(Number(log.args.amount1Out)))
@@ -99,11 +98,14 @@ const fetch = async (options: FetchOptions) => {
     }
   }
 
+  const dailyFees = dailyVolume.clone(0.003)
+
   return {
     dailyVolume,
-    dailyFees: dailyVolume.clone(0.003),
+    dailyFees,
+    dailyUserFees: dailyFees,
     dailyRevenue: 0,
-    dailySupplySideRevenue: dailyVolume.clone(0.003),
+    dailySupplySideRevenue: dailyFees,
   };
 }
 
